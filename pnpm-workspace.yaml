@@ -6,3 +6,4 @@ packages:
   - "workers/shared"
   - "workers/sleeper-client"
   - "workers/yahoo-client"
+  - "workers/selfhost"

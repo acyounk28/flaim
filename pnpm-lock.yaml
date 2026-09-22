@@ -235,6 +235,43 @@ importers:
         specifier: ^4.53.0
         version: 4.82.0(@cloudflare/workers-types@4.20260413.1)
 
+  workers/selfhost:
+    dependencies:
+      '@flaim/worker-shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@hono/node-server':
+        specifier: ^1.19.0
+        version: 1.19.14(hono@4.12.12)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.25.2
+        version: 1.29.0(zod@3.25.76)
+      hono:
+        specifier: ^4.7.0
+        version: 4.12.12
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.0.0
+        version: 4.20260413.1
+      '@types/node':
+        specifier: ^24.0.3
+        version: 24.12.2
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ~3.0.0
+        version: 3.0.9(@types/debug@4.1.13)(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.23.12)
+
   workers/shared:
     devDependencies:
       '@cloudflare/workers-types':

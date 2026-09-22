@@ -1,0 +1,100 @@
+# Flaim self-hosted stack for a Raspberry Pi 5 (arm64) or any amd64 box.
+#
+#   cp .env.example .env && edit .env            # tokens, ESPN cookies, tunnel token
+#   cp config/leagues.example.json config/leagues.json && edit
+#   docker compose up -d --build
+#
+# Services
+#   flaim-mcp    Node gateway: ESPN/Sleeper/Yahoo league tools  -> http://flaim-mcp:8790/mcp (Streamable HTTP)
+#   nfl-metrics  Python FastMCP: nflverse metrics + GM tools    -> http://nfl-metrics:8800/sse (SSE)
+#   cloudflared  Cloudflare Tunnel publishing both to Poke      (profile: tunnel)
+#
+# See docs/SELF-HOSTING.md for Tunnel routes and Poke configuration.
+
+services:
+  flaim-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: flaim-mcp:local
+    container_name: flaim-mcp
+    restart: unless-stopped
+    environment:
+      FLAIM_MCP_TOKEN: ${FLAIM_MCP_TOKEN:?set FLAIM_MCP_TOKEN in .env}
+      FLAIM_LEAGUES_FILE: /config/leagues.json
+      ESPN_SWID: ${ESPN_SWID:-}
+      ESPN_S2: ${ESPN_S2:-}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-}
+      PORT: "8790"
+    volumes:
+      - ./config/leagues.json:/config/leagues.json:ro
+      - flaim-cache:/data
+    ports:
+      # Only bind locally; the tunnel reaches the service over the compose network.
+      - "${FLAIM_BIND:-127.0.0.1}:${FLAIM_PORT:-8790}:8790"
+    deploy:
+      resources:
+        limits:
+          memory: ${FLAIM_MEM_LIMIT:-512m}
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  nfl-metrics:
+    build:
+      context: ./nfl-metrics
+      dockerfile: Dockerfile
+    image: flaim-nfl-metrics:local
+    container_name: nfl-metrics
+    restart: unless-stopped
+    environment:
+      NFL_MCP_TOKEN: ${NFL_MCP_TOKEN:?set NFL_MCP_TOKEN in .env}
+      NFL_MCP_TRANSPORT: ${NFL_MCP_TRANSPORT:-sse}
+      NFL_DATA_DIR: /data/nfl
+      NFL_RAW_TTL_HOURS: ${NFL_RAW_TTL_HOURS:-12}
+      NFL_DERIVED_TTL_HOURS: ${NFL_DERIVED_TTL_HOURS:-6}
+      NFL_MAX_SEASONS_IN_MEMORY: ${NFL_MAX_SEASONS_IN_MEMORY:-1}
+      POLARS_MAX_THREADS: ${POLARS_MAX_THREADS:-3}
+      PORT: "8800"
+    volumes:
+      - nfl-data:/data
+    ports:
+      - "${FLAIM_BIND:-127.0.0.1}:${NFL_PORT:-8800}:8800"
+    deploy:
+      resources:
+        limits:
+          # A full play-by-play season is decoded lazily with column projection; 1.5 GB
+          # leaves headroom on an 8 GB Pi 5 while still catching runaway queries.
+          memory: ${NFL_MEM_LIMIT:-1536m}
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ------------------------------------------------------------------------
+  # Cloudflare Tunnel (remotely-managed). Enable with:  docker compose --profile tunnel up -d
+  # Create the tunnel in Zero Trust > Networks > Tunnels, copy its token into
+  # CLOUDFLARE_TUNNEL_TOKEN, and add public hostnames:
+  #   fantasy.example.com  -> http://flaim-mcp:8790
+  #   nfl.example.com      -> http://nfl-metrics:8800
+  # (Path-based routing on one hostname also works; see docs/SELF-HOSTING.md.)
+  # ------------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest   # multi-arch (arm64 + amd64)
+    container_name: cloudflared
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      flaim-mcp:
+        condition: service_healthy
+      nfl-metrics:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  flaim-cache:
+  nfl-data:

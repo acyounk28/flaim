@@ -1,0 +1,29 @@
+{
+  "name": "flaim-selfhost",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Single-process Node runtime for the Flaim MCP gateway (fantasy-mcp + espn-client + sleeper-client + yahoo-client) with a file-based local auth layer. Used by the Docker image for Raspberry Pi / self-hosted deployments.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "node build.mjs",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flaim/worker-shared": "workspace:*",
+    "@hono/node-server": "^1.19.0",
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "hono": "^4.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@types/node": "^24.0.3",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "~3.0.0"
+  }
+}

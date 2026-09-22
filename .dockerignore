@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/.wrangler
+**/.next
+**/coverage
+**/*.log
+.git
+.env
+.env.*
+!.env.example
+web
+!web/package.json
+extension
+supabase
+docs
+config/leagues.json
+data

@@ -14,6 +14,7 @@ Canonical map for docs that live inside this repository.
 | Worker behavior | `workers/*/README.md` | Service-specific implementation notes.
 | Frontend conventions | `docs/STYLE-GUIDE.md` | Lightweight in-repo style baseline.
 | Email brand system | `docs/EMAILS.md` | Provider roles, sender rules, and template conventions.
+| Self-hosted deployment | `docs/SELF-HOSTING.md` | Docker/arm64 stack (`workers/selfhost`, `nfl-metrics`), Cloudflare Tunnel, MCP client setup.
 
 ## Permanent Docs
 
@@ -25,6 +26,7 @@ Canonical map for docs that live inside this repository.
 - `docs/EMAILS.md`
 - `docs/CHANGELOG.md`
 - `docs/CONNECTOR-DOCS.md`
+- `docs/SELF-HOSTING.md`
 
 ## Component READMEs
 
@@ -36,6 +38,8 @@ Canonical map for docs that live inside this repository.
 - `workers/espn-client/README.md`
 - `workers/yahoo-client/README.md`
 - `workers/sleeper-client/README.md`
+- `workers/selfhost/README.md`
+- `nfl-metrics/README.md`
 
 ## Maintenance Rules
 
