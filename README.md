@@ -98,6 +98,7 @@ Root, web, and workers use `pnpm` via Corepack. The Chrome extension is intentio
 | [Connection Docs](docs/CONNECTOR-DOCS.md) | ChatGPT and Claude links plus optional custom-connector guidance (public version: [flaim.app/docs](https://flaim.app/docs)) |
 | [Web App](web/README.md) | Next.js routes, components, environment |
 | [Workers](workers/README.md) | Cloudflare Workers, MCP tools, ESPN API |
+| [Self-Hosting](docs/SELF-HOSTING.md) | Docker (Raspberry Pi 5 / arm64) MCP gateway + nflverse metrics & GM tools behind a Cloudflare Tunnel |
 | [Extension](extension/README.md) | Chrome extension build, Sync Host, CWS |
 
 ## Getting Help

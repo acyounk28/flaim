@@ -1,0 +1,57 @@
+{
+  "espn": {
+    "leagues": [
+      {
+        "leagueId": "123456",
+        "sport": "football",
+        "seasonYear": 2026,
+        "teamId": "4",
+        "leagueName": "Sunday Night Degenerates",
+        "teamName": "Pi Powered"
+      },
+      {
+        "leagueId": "987654321",
+        "sport": "football",
+        "seasonYear": 2026,
+        "teamId": "10",
+        "leagueName": "Work League (ESPN)",
+        "teamName": "Container Ship"
+      }
+    ]
+  },
+  "sleeper": {
+    "username": "your_sleeper_username",
+    "leagues": [
+      {
+        "leagueId": "1124838275649073152",
+        "sport": "football",
+        "seasonYear": 2026,
+        "rosterId": 3,
+        "leagueName": "Dynasty Forever",
+        "recurringLeagueId": "dynasty-forever"
+      },
+      {
+        "leagueId": "1124910048231305216",
+        "sport": "football",
+        "seasonYear": 2026,
+        "rosterId": 7,
+        "leagueName": "Family Redraft"
+      },
+      {
+        "leagueId": "1125000934567890123",
+        "sport": "football",
+        "seasonYear": 2026,
+        "rosterId": 1,
+        "leagueName": "Best Ball Buddies"
+      }
+    ]
+  },
+  "preferences": {
+    "defaultSport": "football",
+    "defaultFootball": {
+      "platform": "sleeper",
+      "leagueId": "1124838275649073152",
+      "seasonYear": 2026
+    }
+  }
+}

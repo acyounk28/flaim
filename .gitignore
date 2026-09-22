@@ -94,3 +94,13 @@ workers/auth-worker/.env
 *.tgz
 .vercel
 .env*.local
+
+# Python (nfl-metrics)
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Self-host runtime state
+config/leagues.json
+data/
