@@ -66,6 +66,6 @@ EXPOSE 8790
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:${PORT}/health || exit 1
+  CMD curl -fsS http://127.0.0.1:${FLAIM_MCP_PORT:-$PORT}/health || exit 1
 
 CMD ["node", "server.mjs"]

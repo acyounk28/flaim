@@ -132,7 +132,7 @@ export function createLocalAuthApp(config: SelfhostConfig) {
     return c.json({
       success: true,
       mode: 'static',
-      message: `Self-hosted Flaim reads leagues from ${config.leaguesFile}. Edit that file and restart the container to change leagues.`,
+      message: `Self-hosted Flaim reads leagues from ESPN_LEAGUE_IDS / SLEEPER_LEAGUE_IDS in .env and from ${config.leaguesFile}. Edit those and restart the container to change leagues.`,
       results: [
         { platform: 'espn', success: true, leagueCount: espn },
         { platform: 'sleeper', success: true, leagueCount: sleeper },

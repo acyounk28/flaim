@@ -91,6 +91,12 @@ export function createRootHandler(config: SelfhostConfig, options: { cacheDir: s
           espn: config.leagues.espn?.leagues.length ?? 0,
           sleeper: config.leagues.sleeper?.leagues.length ?? 0,
         },
+        providers: {
+          espn: config.espnCredentials ? 'ready' : 'missing-credentials',
+          sleeper: 'ready',
+          yahoo: 'unsupported',
+        },
+        warnings: config.warnings,
       });
     }
     return gateway.fetch(request);
@@ -109,13 +115,16 @@ function main() {
     throw error;
   }
 
+  for (const warning of config.warnings) console.warn(`[selfhost] warning: ${warning}`);
+
   const cacheDir = process.env.FLAIM_CACHE_DIR?.trim() || '/data/cache';
   const handler = createRootHandler(config, { cacheDir });
 
   serve({ fetch: handler, port: config.port, hostname: config.host }, (info) => {
     console.log(
       `[selfhost] Flaim MCP gateway listening on http://${info.address}:${info.port}/mcp ` +
-        `(espn=${config.leagues.espn?.leagues.length ?? 0}, sleeper=${config.leagues.sleeper?.leagues.length ?? 0}, cache=${cacheDir})`
+        `(espn=${config.leagues.espn?.leagues.length ?? 0}${config.espnCredentials ? '' : ' [no ESPN credentials]'}, ` +
+        `sleeper=${config.leagues.sleeper?.leagues.length ?? 0}, cache=${cacheDir})`
     );
   });
 }

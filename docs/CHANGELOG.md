@@ -4,6 +4,12 @@ Follow Keep a Changelog; stamp a version when submitting to directories.
 
 ## [Unreleased]
 
+### Self-hosted gateway: env-first configuration
+
+- **Changed**: the self-hosted `flaim-mcp` container (`workers/selfhost`) now configures itself from environment variables first. `ESPN_LEAGUE_IDS` / `SLEEPER_LEAGUE_IDS` (comma-separated, optional `:teamId` / `:rosterId`) define leagues; `config/leagues.json` is optional and merged in when present. Accepts the `pi-homelab-setup` variable names as aliases (`SWID`, `espn_s2`, `FLAIM_MCP_AUTH_TOKEN`, `FLAIM_MCP_PORT`, `FLAIM_MCP_HOST`).
+- **Fixed**: missing, placeholder, or example ESPN credentials and a missing/invalid/example leagues file no longer crash startup. They are reported as warnings in the logs and on `/health` (`providers.espn`, `warnings`); Sleeper tools keep working.
+- **Fixed**: an unwritable cache directory (read-only root filesystem) falls back to an in-memory cache instead of crashing.
+
 ### Yahoo Direct League Recovery
 
 - **Improved**: the bounded two-secret Yahoo support capture now has a closed target contract for the existing game-key capture (still the default), the exact production broad discovery resource, and one direct teams resource for a strictly validated full numeric league key. Each target rejects irrelevant or conflicting fields before credentials are read; no target accepts a Yahoo URL, path, query, or response selector. All three retain the existing one-fetch guarded-token flow, manual redirect handling, 8 MiB cap, before/after token-content scan, closed audit log, no-store binary response, and v1 capture marker.
