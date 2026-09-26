@@ -3,7 +3,7 @@
 // Self-hosted Flaim replaces the Supabase-backed auth-worker with a static
 // configuration: one operator, a fixed set of leagues, and a single bearer
 // token. This module loads and validates that configuration from a JSON file
-// (FLAIM_LEAGUES_FILE) plus a few environment-variable overrides for secrets.
+// (FLAIM_LEAGUES_FILE) plus environment-variable overrides for credentials.
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
@@ -85,6 +85,10 @@ function readEnv(name: string): string | undefined {
   return value && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function readLeagueIds(name: string): string[] {
+  return (readEnv(name) ?? '').split(',').map((id) => id.trim()).filter(Boolean);
+}
+
 function randomToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -117,6 +121,10 @@ function loadLeaguesFile(path: string): LeaguesConfig {
   try {
     text = readFileSync(path, 'utf8');
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.warn(`[selfhost] Leagues file ${path} not found; using environment configuration and empty league lists.`);
+      return parseLeaguesConfig({});
+    }
     throw new ConfigError(
       `Cannot read leagues file at ${path} (${error instanceof Error ? error.message : String(error)}). ` +
         'Set FLAIM_LEAGUES_FILE or mount config/leagues.json into the container.'
@@ -143,18 +151,24 @@ export function loadConfig(): SelfhostConfig {
   const leaguesFile = readEnv('FLAIM_LEAGUES_FILE') ?? '/config/leagues.json';
   const inlineJson = readEnv('FLAIM_LEAGUES_JSON');
   const leagues = inlineJson ? parseLeaguesConfig(JSON.parse(inlineJson)) : loadLeaguesFile(leaguesFile);
+  const seasonYear = new Date().getFullYear();
+  const espnLeagueIds = readLeagueIds('ESPN_LEAGUE_IDS');
+  const sleeperLeagueIds = readLeagueIds('SLEEPER_LEAGUE_IDS');
+  const espn = leagues.espn ?? { leagues: [] };
+  const sleeper = leagues.sleeper ?? { leagues: [] };
+  const mergedLeagues = parseLeaguesConfig({
+    ...leagues,
+    espn: { ...espn, leagues: [...espn.leagues, ...espnLeagueIds.filter((id) => !espn.leagues.some((league) => league.leagueId === id)).map((leagueId) => ({ leagueId, sport: 'football', seasonYear }))] },
+    sleeper: { ...sleeper, leagues: [...sleeper.leagues, ...sleeperLeagueIds.filter((id) => !sleeper.leagues.some((league) => league.leagueId === id)).map((leagueId) => ({ leagueId, sport: 'football', seasonYear }))] },
+  });
 
-  const swid = readEnv('ESPN_SWID') ?? leagues.espn?.swid;
-  const s2 = readEnv('ESPN_S2') ?? leagues.espn?.s2;
-  const espnLeagueCount = leagues.espn?.leagues.length ?? 0;
+  const swid = readEnv('SWID') ?? readEnv('ESPN_SWID') ?? readEnv('espn_swid') ?? readEnv('espn_s2') ?? mergedLeagues.espn?.swid;
+  const s2 = readEnv('ESPN_S2') ?? readEnv('espn_s2') ?? mergedLeagues.espn?.s2;
   let espnCredentials: SelfhostConfig['espnCredentials'] = null;
   if (swid && s2) {
     espnCredentials = { swid: normalizeSwid(swid), s2 };
-  } else if (espnLeagueCount > 0) {
-    throw new ConfigError(
-      `${espnLeagueCount} ESPN league(s) configured but ESPN credentials are missing. ` +
-        'Set ESPN_SWID and ESPN_S2 (recommended) or espn.swid / espn.s2 in the leagues file.'
-    );
+  } else if ((mergedLeagues.espn?.leagues.length ?? 0) > 0) {
+    console.warn('[selfhost] ESPN leagues are configured but ESPN credentials are missing or incomplete; ESPN tools will be unavailable. Set SWID and ESPN_S2 (or ESPN_SWID and ESPN_S2).');
   }
 
   const portRaw = readEnv('PORT') ?? '8790';
@@ -169,7 +183,7 @@ export function loadConfig(): SelfhostConfig {
     port,
     host: readEnv('HOST') ?? '0.0.0.0',
     leaguesFile,
-    leagues,
+    leagues: mergedLeagues,
     espnCredentials,
   };
 }
