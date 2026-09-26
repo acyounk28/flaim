@@ -95,7 +95,7 @@ export class ConfigError extends Error {}
  */
 export const ENV_ALIASES = {
   mcpToken: ['FLAIM_MCP_TOKEN', 'FLAIM_MCP_AUTH_TOKEN'],
-  espnSwid: ['ESPN_SWID', 'SWID', 'swid'],
+  espnSwid: ['ESPN_SWID', 'SWID', 'swid', 'espn_swid'],
   espnS2: ['ESPN_S2', 'espn_s2', 'ESPN_ESPN_S2'],
   espnLeagueIds: ['ESPN_LEAGUE_IDS', 'ESPN_LEAGUE_ID'],
   sleeperLeagueIds: ['SLEEPER_LEAGUE_IDS', 'SLEEPER_LEAGUE_ID'],
