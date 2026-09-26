@@ -9,6 +9,7 @@ Follow Keep a Changelog; stamp a version when submitting to directories.
 - **Changed**: the self-hosted `flaim-mcp` container (`workers/selfhost`) now configures itself from environment variables first. `ESPN_LEAGUE_IDS` / `SLEEPER_LEAGUE_IDS` (comma-separated, optional `:teamId` / `:rosterId`) define leagues; `config/leagues.json` is optional and merged in when present. Accepts the `pi-homelab-setup` variable names as aliases (`SWID`, `espn_s2`, `FLAIM_MCP_AUTH_TOKEN`, `FLAIM_MCP_PORT`, `FLAIM_MCP_HOST`).
 - **Fixed**: missing, placeholder, or example ESPN credentials and a missing/invalid/example leagues file no longer crash startup. They are reported as warnings in the logs and on `/health` (`providers.espn`, `warnings`); Sleeper tools keep working.
 - **Fixed**: an unwritable cache directory (read-only root filesystem) falls back to an in-memory cache instead of crashing.
+- **Tests**: `workers/selfhost/src/__tests__/integration.test.ts` boots the gateway on a real socket (and as a real `server.ts` process) with env-only config and no leagues file, then asserts the MCP contract clients depend on: `initialize`/`notifications/initialized`/`tools/list`/`tools/call` over Streamable HTTP (SSE responses), exact 401/405 bodies and `WWW-Authenticate` challenges for missing/invalid/malformed bearer tokens, CORS preflight, and the official MCP SDK client lifecycle.
 
 ### Yahoo Direct League Recovery
 
