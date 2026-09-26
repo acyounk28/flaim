@@ -32,8 +32,7 @@ docker compose version
 
 ```bash
 git clone https://github.com/acyounk28/flaim.git && cd flaim
-cp .env.example .env
-cp config/leagues.example.json config/leagues.json
+cp .env.example .env   # tokens, ESPN cookies, ESPN_LEAGUE_IDS / SLEEPER_LEAGUE_IDS
 openssl rand -hex 32   # -> FLAIM_MCP_TOKEN
 openssl rand -hex 32   # -> NFL_MCP_TOKEN
 ```
@@ -42,12 +41,14 @@ openssl rand -hex 32   # -> NFL_MCP_TOKEN
 
 | Variable | Service | Default | Notes |
 |---|---|---|---|
-| `FLAIM_MCP_TOKEN` | flaim-mcp | (required) | Bearer token clients send to `/mcp`. Min 24 chars. |
-| `FLAIM_LEAGUES_FILE` | flaim-mcp | `/config/leagues.json` | Path inside the container. `FLAIM_LEAGUES_JSON` (inline JSON) is also accepted. |
-| `ESPN_SWID`, `ESPN_S2` | flaim-mcp | – | ESPN cookies; required if any ESPN league is configured. May also be placed under `espn.swid`/`espn.s2` in `leagues.json`. Env wins. |
+| `FLAIM_MCP_TOKEN` | flaim-mcp | (required) | Bearer token clients send to `/mcp`. Min 24 chars. Alias: `FLAIM_MCP_AUTH_TOKEN`. |
+| `ESPN_LEAGUE_IDS` | flaim-mcp | – | Comma-separated ESPN league ids, optionally `leagueId:teamId`. Sport/season from `ESPN_SPORT` (default `football`) and `ESPN_SEASON_YEAR` (default: current season). |
+| `SLEEPER_LEAGUE_IDS` | flaim-mcp | – | Comma-separated Sleeper league ids, optionally `leagueId:rosterId`. `SLEEPER_SPORT` / `SLEEPER_SEASON_YEAR` as above; `SLEEPER_USERNAME` optional. |
+| `ESPN_SWID`, `ESPN_S2` | flaim-mcp | – | ESPN cookies, needed for ESPN tools. Aliases: `SWID`, `espn_s2`. Missing or placeholder values do **not** stop startup: ESPN tools return a credentials error, Sleeper keeps working. May also live under `espn.swid`/`espn.s2` in `leagues.json`; env wins. |
+| `FLAIM_LEAGUES_FILE` | flaim-mcp | `/config/leagues.json` | Optional JSON file (see below). Missing/invalid/example content is logged as a warning and ignored. `FLAIM_LEAGUES_JSON` (inline JSON) is also accepted. |
 | `INTERNAL_SERVICE_TOKEN` | flaim-mcp | random | Token used between the in-process Worker apps. Leave blank. |
 | `FLAIM_CACHE_DIR` | flaim-mcp | `/data/cache` | File-backed KV (league metadata cache). |
-| `PORT` / `HOST` | both | `8790` / `8800`, `0.0.0.0` | Set by Compose. |
+| `PORT` / `HOST` | both | `8790` / `8800`, `0.0.0.0` | Set by Compose. flaim-mcp also honours `FLAIM_MCP_PORT` / `FLAIM_MCP_HOST` (they take precedence). |
 | `NFL_MCP_TOKEN` | nfl-metrics | (required) | Bearer token for `/sse` and `/messages`. Min 24 chars. |
 | `NFL_MCP_TRANSPORT` | nfl-metrics | `sse` | `sse` → `/sse`; `streamable-http` → `/mcp`. |
 | `NFL_DATA_DIR` | nfl-metrics | `/data/nfl` | Parquet cache root (`raw/`, `derived/`, `nflreadpy/`). |
@@ -60,11 +61,16 @@ openssl rand -hex 32   # -> NFL_MCP_TOKEN
 | `FLAIM_MEM_LIMIT`, `NFL_MEM_LIMIT` | compose | `512m`, `1536m` | Container memory limits. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | cloudflared | – | From Zero Trust → Networks → Tunnels. |
 
-### League file (`config/leagues.json`)
+### Optional league file (`config/leagues.json`)
 
-The gateway treats every league in this file as belonging to the single
-self-host operator; there are no user accounts. Example with **2 ESPN leagues and
-3 Sleeper leagues** (this is `config/leagues.example.json`):
+Most setups need only `.env`. The file adds what env vars cannot express:
+league/team names, mixed sports or seasons, and explicit default leagues. It
+is merged with the env lists (file entries win on the same league) and is
+git-ignored, so a local copy on the Pi never conflicts with `git pull`. The
+gateway treats every league as belonging to the single self-host operator;
+there are no user accounts. Example with **2 ESPN leagues and 3 Sleeper
+leagues** (this is `config/leagues.example.json`; its ids are recognised as
+placeholders and skipped if you copy it unchanged):
 
 ```json
 {
@@ -103,6 +109,12 @@ docker compose ps
 curl -s localhost:8790/health
 curl -s localhost:8800/health
 ```
+
+`flaim-mcp`'s `/health` reports league counts, per-provider status
+(`espn: ready | missing-credentials`) and any configuration `warnings`; the
+same warnings are printed at startup as `[selfhost] warning: ...`. The
+container only refuses to start when the bearer token is missing/placeholder
+or the port is invalid.
 
 First build on a Pi 5 takes ~6–10 minutes (Node workspace install + Python wheels; all
 dependencies ship aarch64 wheels, so nothing compiles).
@@ -241,7 +253,8 @@ Omit `projection` and pass `league` + `season` to derive projections from nflver
 ## 8. Limitations
 
 - **Single operator.** The self-host gateway has no user accounts, OAuth or Supabase; every configured league belongs to the one token holder. Yahoo OAuth is not implemented in the local auth stub (Yahoo leagues need the hosted service).
-- **ESPN cookies are manual.** The Chrome extension flow targets the hosted service; on the Pi you paste `SWID`/`espn_s2` yourself.
+- **ESPN cookies are manual.** The Chrome extension flow targets the hosted service; on the Pi you paste `SWID`/`espn_s2` yourself. Without them the server still runs, but ESPN tools report a credentials error.
+- **No LLM calls.** Neither container calls an AI model; model choice and cost are decided entirely by the MCP client (Poke, Claude, ChatGPT) you connect.
 - **Official inactives** depend on ESPN's public scoreboard/summary JSON, which is unauthenticated and undocumented; before the 90-minute window the tool returns practice-report designations and says so.
 - **Betting lines**: nflverse schedule lines can lag or be missing for the current week; ESPN odds fill gaps when available. No paid odds provider is used.
 - **Route participation** relies on nflverse participation data, which is released with a delay and may be missing for the newest weeks.

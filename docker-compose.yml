@@ -1,8 +1,11 @@
 # Flaim self-hosted stack for a Raspberry Pi 5 (arm64) or any amd64 box.
 #
-#   cp .env.example .env && edit .env            # tokens, ESPN cookies, tunnel token
-#   cp config/leagues.example.json config/leagues.json && edit
+#   cp .env.example .env && edit .env            # tokens, ESPN cookies, league ids, tunnel token
 #   docker compose up -d --build
+#
+# Leagues come from ESPN_LEAGUE_IDS / SLEEPER_LEAGUE_IDS in .env. An optional
+# config/leagues.json (see config/leagues.example.json) adds names/team ids;
+# it is not required and is ignored if missing.
 #
 # Services
 #   flaim-mcp    Node gateway: ESPN/Sleeper/Yahoo league tools  -> http://flaim-mcp:8790/mcp (Streamable HTTP)
@@ -20,14 +23,19 @@ services:
     container_name: flaim-mcp
     restart: unless-stopped
     environment:
-      FLAIM_MCP_TOKEN: ${FLAIM_MCP_TOKEN:?set FLAIM_MCP_TOKEN in .env}
+      FLAIM_MCP_TOKEN: ${FLAIM_MCP_TOKEN:-${FLAIM_MCP_AUTH_TOKEN:?set FLAIM_MCP_TOKEN in .env}}
       FLAIM_LEAGUES_FILE: /config/leagues.json
-      ESPN_SWID: ${ESPN_SWID:-}
-      ESPN_S2: ${ESPN_S2:-}
+      ESPN_SWID: ${ESPN_SWID:-${SWID:-}}
+      ESPN_S2: ${ESPN_S2:-${espn_s2:-}}
+      ESPN_LEAGUE_IDS: ${ESPN_LEAGUE_IDS:-}
+      SLEEPER_LEAGUE_IDS: ${SLEEPER_LEAGUE_IDS:-}
+      SLEEPER_USERNAME: ${SLEEPER_USERNAME:-}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-}
       PORT: "8790"
     volumes:
-      - ./config/leagues.json:/config/leagues.json:ro
+      # Optional. Mount the directory (not the file) so a missing leagues.json
+      # does not make Docker create an empty directory in its place.
+      - ./config:/config:ro
       - flaim-cache:/data
     ports:
       # Only bind locally; the tunnel reaches the service over the compose network.

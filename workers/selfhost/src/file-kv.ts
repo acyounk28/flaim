@@ -16,9 +16,18 @@ interface Envelope {
 
 export class FileKV {
   private readonly memory = new Map<string, Envelope>();
+  private readonly dir: string | null;
 
-  constructor(private readonly dir: string | null) {
-    if (dir) mkdirSync(dir, { recursive: true });
+  constructor(dir: string | null) {
+    this.dir = dir;
+    if (dir) {
+      try {
+        mkdirSync(dir, { recursive: true });
+      } catch (error) {
+        console.warn(`[selfhost] cache dir ${dir} is not writable (${error instanceof Error ? error.message : String(error)}); using in-memory cache only`);
+        this.dir = null;
+      }
+    }
   }
 
   private filePath(key: string): string | null {
