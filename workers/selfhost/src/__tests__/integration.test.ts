@@ -61,6 +61,23 @@ async function freePort(): Promise<number> {
   });
 }
 
+// Open a GET SSE stream, read its first frame, then abort (the stream is
+// otherwise held open by the server until the client disconnects).
+async function openSseStream(url: string, headers: Record<string, string> = {}) {
+  const controller = new AbortController();
+  const res = await fetch(url, { headers, signal: controller.signal });
+  let firstFrame = '';
+  if (res.ok && res.body) {
+    const reader = res.body.getReader();
+    const timeout = setTimeout(() => reader.cancel(), 5_000);
+    const { value } = await reader.read();
+    clearTimeout(timeout);
+    firstFrame = new TextDecoder().decode(value);
+  }
+  controller.abort();
+  return { res, firstFrame };
+}
+
 function parseSse(text: string): Array<{ result?: Record<string, unknown>; error?: { code: number; message: string }; id?: unknown }> {
   return text
     .split('\n')
@@ -112,21 +129,72 @@ describe('self-hosted gateway over HTTP (env-only, no leagues file)', () => {
     expect((await fetch(`${base}/healthz`)).status).toBe(200);
   });
 
-  it('GET /mcp is 405 with a JSON-RPC body and Allow: POST (Streamable HTTP, POST-only)', async () => {
-    const res = await fetch(`${base}/mcp`, { headers: { Accept: 'text/event-stream' } });
+  describe('GET /mcp (SSE stream, what a Poke-style URL validator probes)', () => {
+    it.each(['/mcp', '/mcp/', '/fantasy/mcp', '/fantasy/mcp/'])(
+      'GET %s opens a 200 text/event-stream with keep-alive headers and a first SSE frame, without auth',
+      async (path) => {
+        const { res, firstFrame } = await openSseStream(`${base}${path}`, { Accept: 'text/event-stream' });
+        expect(res.status).toBe(200);
+        expect(res.headers.get('content-type')).toContain('text/event-stream');
+        expect(res.headers.get('cache-control')).toContain('no-cache');
+        expect(res.headers.get('cache-control')).toContain('no-transform');
+        expect(res.headers.get('connection')).toBe('keep-alive');
+        expect(res.headers.get('access-control-allow-origin')).toBe('*');
+        // valid SSE: a comment line terminated by a blank line
+        expect(firstFrame).toMatch(/^: [^\n]*\n\n/);
+      }
+    );
+
+    it('streams even when the probe sends no Accept header (curl / naive validators)', async () => {
+      const { res, firstFrame } = await openSseStream(`${base}/mcp`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/event-stream');
+      expect(firstFrame).toMatch(/^: /);
+    });
+
+    it('reflects the Origin on the stream response and exposes Mcp-Session-Id', async () => {
+      const { res } = await openSseStream(`${base}/mcp`, { Accept: 'text/event-stream', Origin: 'https://poke.com' });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('https://poke.com');
+      expect(res.headers.get('vary')).toContain('Origin');
+      expect(res.headers.get('access-control-expose-headers')?.toLowerCase()).toContain('mcp-session-id');
+    });
+
+    it('still rejects a wrong bearer token on GET with 401 (auth is checked when presented)', async () => {
+      const res = await fetch(`${base}/mcp`, { headers: { Accept: 'text/event-stream', Authorization: 'Bearer wrong' } });
+      expect(res.status).toBe(401);
+      expect(res.headers.get('www-authenticate')).toContain('invalid_token');
+      expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    });
+  });
+
+  it('PUT /mcp is 405 with a JSON-RPC body and Allow listing GET/POST/DELETE', async () => {
+    const res = await fetch(`${base}/mcp`, { method: 'PUT' });
     expect(res.status).toBe(405);
-    expect(res.headers.get('allow')).toBe('POST');
+    expect(res.headers.get('allow')).toBe('GET, POST, DELETE');
     expect(await res.json()).toEqual({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null });
   });
 
-  it('OPTIONS /mcp answers a CORS preflight allowing Authorization', async () => {
-    const res = await fetch(`${base}/mcp`, {
-      method: 'OPTIONS',
-      headers: { Origin: 'https://poke.com', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization' },
+  describe('OPTIONS /mcp CORS preflight', () => {
+    it.each(['/mcp', '/fantasy/mcp'])('%s reflects the origin and allows GET/POST/OPTIONS + MCP headers', async (path) => {
+      const res = await fetch(`${base}${path}`, {
+        method: 'OPTIONS',
+        headers: { Origin: 'https://poke.com', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization, mcp-session-id' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('https://poke.com');
+      const methods = res.headers.get('access-control-allow-methods') ?? '';
+      for (const m of ['GET', 'POST', 'OPTIONS']) expect(methods).toContain(m);
+      const allowHeaders = (res.headers.get('access-control-allow-headers') ?? '').toLowerCase();
+      for (const h of ['content-type', 'authorization', 'mcp-session-id']) expect(allowHeaders).toContain(h);
+      expect(res.headers.get('access-control-max-age')).toBe('86400');
     });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('access-control-allow-methods')).toContain('POST');
-    expect(res.headers.get('access-control-allow-headers')?.toLowerCase()).toContain('authorization');
+
+    it('answers * when the preflight carries no Origin', async () => {
+      const res = await fetch(`${base}/mcp`, { method: 'OPTIONS', headers: { 'Access-Control-Request-Method': 'POST' } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    });
   });
 
   describe('initialize handshake', () => {
@@ -313,6 +381,11 @@ describe('server.ts process boot (no leagues.json anywhere)', () => {
     });
     expect(init.status).toBe(200);
     expect(parseSse(await init.text())[0].result?.serverInfo).toMatchObject({ name: 'fantasy-mcp' });
+
+    const { res: sse, firstFrame } = await openSseStream(`${base}/mcp`, { Accept: 'text/event-stream' });
+    expect(sse.status).toBe(200);
+    expect(sse.headers.get('content-type')).toContain('text/event-stream');
+    expect(firstFrame).toMatch(/^: /);
 
     child.kill('SIGTERM');
     const { code, signal } = await exited;

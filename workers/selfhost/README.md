@@ -10,7 +10,8 @@ deployments. It is not deployed to Cloudflare.
   `SLEEPER_LEAGUE_IDS` (env) plus an optional `config/leagues.json`.
 - Replaces KV with a file-backed store (`src/file-kv.ts`) under `FLAIM_CACHE_DIR`.
 - Exposes `GET /health`, `GET /healthz` and the MCP Streamable HTTP endpoint at `/mcp` on
-  port `8790`.
+  port `8790` (`POST` for JSON-RPC, `GET` opens the SSE stream, `OPTIONS` answers CORS
+  preflights for any origin).
 
 ```bash
 corepack pnpm --dir workers/selfhost type-check

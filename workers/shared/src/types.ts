@@ -45,4 +45,11 @@ export interface CorsOptions {
   additionalHeaders?: string[];
   /** Cache preflight response duration in seconds (default: none) */
   maxAge?: number;
+  /**
+   * Allow every origin: reflect the request Origin when present, otherwise `*`.
+   * Use only for bearer-token endpoints that never rely on cookies.
+   */
+  allowAnyOrigin?: boolean;
+  /** Response headers browsers may read (Access-Control-Expose-Headers) */
+  exposedHeaders?: string[];
 }

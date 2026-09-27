@@ -2,6 +2,7 @@
 import { Hono, type Context } from 'hono';
 import {
   createMcpCorsHeaders,
+  createMcpEndpointCorsHeaders,
   isCorsPreflightRequest,
   CORRELATION_ID_HEADER,
   EVAL_RUN_HEADER,
@@ -123,18 +124,31 @@ function logFantasySetupFailure(
   } as SetupSignalEvent & Record<string, unknown>);
 }
 
+const MCP_ENDPOINT_PATHS = new Set(['/mcp', '/mcp/', '/fantasy/mcp', '/fantasy/mcp/']);
+
+function isMcpEndpointPath(pathname: string): boolean {
+  return MCP_ENDPOINT_PATHS.has(pathname);
+}
+
+function corsHeadersFor(request: Request): Record<string, string> {
+  return isMcpEndpointPath(new URL(request.url).pathname)
+    ? createMcpEndpointCorsHeaders(request)
+    : createMcpCorsHeaders(request);
+}
+
 // CORS middleware
 app.use('*', async (c, next) => {
   if (isCorsPreflightRequest(c.req.raw)) {
     return new Response(null, {
       status: 200,
-      headers: createMcpCorsHeaders(c.req.raw),
+      headers: corsHeadersFor(c.req.raw),
     });
   }
   await next();
-  const corsHeaders = createMcpCorsHeaders(c.req.raw);
+  const corsHeaders = corsHeadersFor(c.req.raw);
+  const overrideExisting = isMcpEndpointPath(new URL(c.req.raw.url).pathname);
   Object.entries(corsHeaders).forEach(([key, value]) => {
-    if (!c.res.headers.has(key)) {
+    if (overrideExisting || !c.res.headers.has(key)) {
       c.res.headers.set(key, value);
     }
   });
@@ -523,8 +537,10 @@ async function handleMcpEndpoint(c: Context<{ Bindings: Env }>): Promise<Respons
   // Remove once CF partial-capture issue (FLA-86) is resolved.
   console.log(`[fantasy-mcp] probe method=${c.req.method} path=${c.req.path}`);
 
-  if (c.req.method !== 'POST') {
-    return buildMethodNotAllowedResponse('POST');
+  // POST carries JSON-RPC (Streamable HTTP); GET opens the server-to-client
+  // SSE stream; DELETE closes a session. Anything else is rejected up front.
+  if (c.req.method !== 'POST' && c.req.method !== 'GET' && c.req.method !== 'DELETE') {
+    return buildMethodNotAllowedResponse('GET, POST, DELETE');
   }
 
   return handleMcpRequest(c);
@@ -634,7 +650,7 @@ app.notFound((c) => {
     endpoints: {
       '/health': 'GET - Health check with binding status',
       '/.well-known/oauth-protected-resource': 'GET - OAuth metadata',
-      '/mcp': 'POST - MCP protocol endpoint'
+      '/mcp': 'POST JSON-RPC / GET SSE stream - MCP protocol endpoint'
     }
   }, 404);
 });
