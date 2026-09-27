@@ -18,6 +18,7 @@ export {
   handleCorsPreflightResponse,
   isCorsPreflightRequest,
   createMcpCorsHeaders,
+  createMcpEndpointCorsHeaders,
   handleMcpCorsPreflightResponse,
   createAuthWorkerCorsHeaders,
   handleAuthWorkerCorsPreflightResponse,

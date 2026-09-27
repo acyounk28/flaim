@@ -29,7 +29,20 @@ export function normalizeMcpAcceptHeader(request: Request): Request {
   return new Request(request, { headers });
 }
 
+/**
+ * GET /mcp opens the Streamable HTTP server-to-client SSE stream. Like
+ * `initialize`, it exposes no user data, so anonymous clients (and integration
+ * validators that probe the URL with GET) may open it.
+ */
+export function isMcpSseStreamRequest(request: Request): boolean {
+  return request.method === 'GET';
+}
+
 export async function isPublicMcpHandshakeRequest(request: Request): Promise<boolean> {
+  if (isMcpSseStreamRequest(request)) {
+    return true;
+  }
+
   if (request.method !== 'POST') {
     return false;
   }

@@ -20,7 +20,7 @@ function buildRequest(method: string, params: Record<string, unknown> = {}): Req
 }
 
 describe('mcp auth gate helpers', () => {
-  it('rejects GET as not a public handshake', async () => {
+  it('treats GET (SSE stream open) as a public handshake regardless of Accept', async () => {
     const variants = [
       new Request('https://api.flaim.app/mcp', { method: 'GET', headers: { Accept: 'text/event-stream' } }),
       new Request('https://api.flaim.app/mcp', { method: 'GET', headers: { Accept: 'application/json' } }),
@@ -28,6 +28,13 @@ describe('mcp auth gate helpers', () => {
     ];
 
     for (const req of variants) {
+      await expect(isPublicMcpHandshakeRequest(req)).resolves.toBe(true);
+    }
+  });
+
+  it('does not treat DELETE or PUT as a public handshake', async () => {
+    for (const method of ['DELETE', 'PUT']) {
+      const req = new Request('https://api.flaim.app/mcp', { method, headers: { Accept: 'text/event-stream' } });
       await expect(isPublicMcpHandshakeRequest(req)).resolves.toBe(false);
     }
   });

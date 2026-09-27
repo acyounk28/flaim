@@ -4,6 +4,12 @@ Follow Keep a Changelog; stamp a version when submitting to directories.
 
 ## [Unreleased]
 
+### MCP endpoint: GET SSE stream and browser-safe CORS
+
+- **Added**: `GET /mcp` (and `/mcp/`, `/fantasy/mcp`, `/fantasy/mcp/`) now opens the Streamable HTTP server-to-client SSE stream (`200`, `text/event-stream`, `Cache-Control: no-cache, no-transform`, `Connection: keep-alive`, immediate SSE comment frame) instead of returning `405`. Opening the stream needs no bearer token, mirroring the public `initialize`/`tools/list` handshake; a presented-but-invalid token is still rejected with `401`. `DELETE` (session close) is also accepted; other methods keep the JSON-RPC `405` with `Allow: GET, POST, DELETE`. This unblocks integration validators (e.g. Poke) that probe the MCP URL with GET to detect SSE. POST JSON-RPC behavior is unchanged.
+- **Changed**: CORS on the MCP endpoint paths reflects any `Origin` (or `*`), allows `Mcp-Session-Id`, `Mcp-Protocol-Version` and `Last-Event-ID` request headers in addition to `Content-Type`/`Authorization`, exposes `Mcp-Session-Id`, `Mcp-Protocol-Version` and `WWW-Authenticate`, and caches preflights for 24h. Other routes keep the existing allowlist-based CORS.
+- **Tests**: the selfhost integration suite covers GET SSE on all four paths (headers + first frame), no-Accept probes, origin reflection, invalid-token GET, PUT 405, and preflight headers on `/mcp` and `/fantasy/mcp`.
+
 ### Self-hosted gateway: env-first configuration
 
 - **Changed**: the self-hosted `flaim-mcp` container (`workers/selfhost`) now configures itself from environment variables first. `ESPN_LEAGUE_IDS` / `SLEEPER_LEAGUE_IDS` (comma-separated, optional `:teamId` / `:rosterId`) define leagues; `config/leagues.json` is optional and merged in when present. Accepts the `pi-homelab-setup` variable names as aliases (`SWID`, `espn_s2`, `FLAIM_MCP_AUTH_TOKEN`, `FLAIM_MCP_PORT`, `FLAIM_MCP_HOST`).

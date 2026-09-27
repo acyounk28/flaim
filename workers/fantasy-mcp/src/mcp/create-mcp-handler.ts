@@ -42,6 +42,40 @@ function injectToolsListSecuritySchemes(message: unknown): void {
   }
 }
 
+/**
+ * SSE comment written as soon as a GET stream opens. The SDK only emits a
+ * priming event when an event store is configured, so without this the stream
+ * would carry no bytes until the server pushes a notification; clients and URL
+ * validators that wait for the first SSE frame would otherwise hang.
+ */
+export const MCP_SSE_STREAM_OPEN_COMMENT = ': mcp stream open\n\n';
+
+function prependSseStreamOpenComment(response: Response): Response {
+  if (!response.body) {
+    return response;
+  }
+  const encoder = new TextEncoder();
+  let primed = false;
+  const primer = new TransformStream<Uint8Array, Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(MCP_SSE_STREAM_OPEN_COMMENT));
+      primed = true;
+    },
+    transform(chunk, controller) {
+      if (!primed) {
+        controller.enqueue(encoder.encode(MCP_SSE_STREAM_OPEN_COMMENT));
+        primed = true;
+      }
+      controller.enqueue(chunk);
+    },
+  });
+  return new Response(response.body.pipeThrough(primer), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 export function createMcpHandler(server: McpServer, options: McpHandlerOptions = {}) {
   const { enableJsonResponse = true, sessionIdGenerator = undefined } = options;
 
@@ -62,6 +96,12 @@ export function createMcpHandler(server: McpServer, options: McpHandlerOptions =
     };
 
     await server.connect(transport);
-    return transport.handleRequest(_request);
+    const response = await transport.handleRequest(_request);
+
+    const isSseStream =
+      _request.method === 'GET' &&
+      response.status === 200 &&
+      (response.headers.get('Content-Type') || '').includes('text/event-stream');
+    return isSseStream ? prependSseStreamOpenComment(response) : response;
   };
 }

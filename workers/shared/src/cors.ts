@@ -100,8 +100,15 @@ export function createCorsHeaders(request: Request, options: CorsOptions = {}): 
     headers['Access-Control-Max-Age'] = String(options.maxAge);
   }
 
+  if (options.exposedHeaders?.length) {
+    headers['Access-Control-Expose-Headers'] = mergeUnique(options.exposedHeaders).join(', ');
+  }
+
   // Add origin if allowed
-  if (origin && isOriginAllowed(origin, allowedOrigins)) {
+  if (options.allowAnyOrigin) {
+    headers['Access-Control-Allow-Origin'] = origin || '*';
+    if (origin) headers['Vary'] = 'Origin';
+  } else if (origin && isOriginAllowed(origin, allowedOrigins)) {
     headers['Access-Control-Allow-Origin'] = origin;
   }
 
@@ -123,6 +130,35 @@ export function handleCorsPreflightResponse(request: Request, options: CorsOptio
  */
 export function createMcpCorsHeaders(request: Request, options: CorsOptions = {}): Record<string, string> {
   return createCorsHeaders(request, options);
+}
+
+/**
+ * Streamable HTTP / SSE request headers MCP clients send besides the defaults.
+ */
+const MCP_ENDPOINT_ADDITIONAL_HEADERS = ['Mcp-Session-Id', 'Mcp-Protocol-Version', 'Last-Event-ID'];
+const MCP_ENDPOINT_EXPOSED_HEADERS = ['Mcp-Session-Id', 'Mcp-Protocol-Version', 'WWW-Authenticate'];
+const MCP_ENDPOINT_MAX_AGE = 86400;
+
+/**
+ * CORS for the MCP transport endpoint itself (`/mcp`). It is a bearer-token API
+ * with no cookie auth, so any origin may call it (browser-based MCP clients and
+ * integration validators such as Poke). Methods are GET (SSE stream), POST
+ * (JSON-RPC), DELETE (session close), OPTIONS.
+ */
+export function createMcpEndpointCorsHeaders(request: Request, options: CorsOptions = {}): Record<string, string> {
+  return createCorsHeaders(request, {
+    ...options,
+    allowAnyOrigin: true,
+    additionalHeaders: mergeUnique([
+      ...MCP_ENDPOINT_ADDITIONAL_HEADERS,
+      ...(options.additionalHeaders || []),
+    ]),
+    exposedHeaders: mergeUnique([
+      ...MCP_ENDPOINT_EXPOSED_HEADERS,
+      ...(options.exposedHeaders || []),
+    ]),
+    maxAge: options.maxAge ?? MCP_ENDPOINT_MAX_AGE,
+  });
 }
 
 export function handleMcpCorsPreflightResponse(request: Request, options: CorsOptions = {}): Response {
