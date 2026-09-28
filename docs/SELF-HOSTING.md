@@ -242,6 +242,25 @@ Example lineup request:
 
 Omit `projection` and pass `league` + `season` to derive projections from nflverse weekly fantasy points instead.
 
+### Trade value tools
+
+Trade value is a live, standard-PPR (1 pt/reception, 0.1/yd, 6/TD, 4/pass TD) 0–100 index for every QB/RB/WR/TE. It is deliberately **not** affected by league scoring settings: a `league` object is only used for rosters. Each value blends:
+
+- **Production** — season PPG, last-3-games PPG, prior-season PPG and nflverse expected fantasy points (`ff_opportunity`), weighted toward recent form.
+- **Usage trend** — offensive snap %, target share, air-yards share and red-zone touch share, season vs last three games. Declines cut value roughly twice as hard as rises add it, and a snap share that halves caps the multiplier (`role_reduced`). Route participation and targets per route run are included when nflverse participation data exists for the season.
+- **Depth-chart role** — the latest nflverse team depth chart (`RB2`, `WR3`, …) with a further penalty when the player has been demoted since the snapshot ~3 weeks earlier.
+- **Availability** — ESPN designation for the next game (`questionable`, `doubtful`, `out`, IR…), games missed this season, prior-season games missed and injury-report frequency.
+- **Market** — FantasyPros weekly PPR positional ECR (via nflverse) blended at 25%; `market_overvalues` / `market_undervalues` flag large model-vs-market gaps.
+
+Model value is value over positional replacement (12-team defaults), so a QB12 is worth far less than an RB12. Every response carries `data_coverage`, `freshness` (source as-of dates, ESPN fetch time, per-source errors) and a per-player `confidence`; a source that fails to load lowers confidence instead of silently changing the number. Set `include_pbp: false` to skip the play-by-play download (red-zone and route metrics become unavailable).
+
+| Tool | Behaviour |
+|---|---|
+| `get_player_trade_value` | Dossiers for one or more players (names or gsis ids): value, model/market scores, production, usage trend, role, injury risk, flags. |
+| `rank_trade_values` | League-wide board, filterable by `position`, `team` and `flag` (e.g. `target_share_declining`, `depth_chart_demoted`, `market_overvalues`). |
+| `compare_trade` | Both sides of a trade: consolidation-weighted package values (the best asset counts fully, depth pieces less), gap, verdict. With `league` + `side_a_team`/`side_b_team`, verifies ownership and reports each starting lineup's PPG before/after. |
+| `evaluate_trade_proposals` | Batch of `{team_a, team_b, a_gives, b_gives}` proposals ranked by fairness, with ownership and unresolved-player issues when league rosters are supplied. |
+
 ## 7. Caching and Pi resource behaviour
 
 - Raw nflverse files are stored once per season under `NFL_DATA_DIR/raw/pbp_<season>.parquet` etc. Completed seasons are immutable; the current season re-downloads after `NFL_RAW_TTL_HOURS`.

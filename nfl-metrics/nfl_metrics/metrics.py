@@ -178,6 +178,25 @@ def red_zone_usage(
     return _round(out)
 
 
+def red_zone_weekly(pbp: pl.LazyFrame, season_type: str = REG) -> pl.DataFrame:
+    """Per player-week red-zone touches (carries + targets) with the team's red-zone play count."""
+    lf = pbp
+    if season_type:
+        lf = lf.filter(pl.col("season_type") == season_type)
+    rz = lf.filter((pl.col("yardline_100") <= 20) & ((pl.col("pass") == 1) | (pl.col("rush") == 1)) & (pl.col("sack") == 0))
+    rushes = rz.filter(pl.col("rusher_player_id").is_not_null()).group_by(["rusher_player_id", "posteam", "week"]).agg(pl.len().alias("rz_carries")).rename({"rusher_player_id": "player_id"})
+    targets = rz.filter(pl.col("receiver_player_id").is_not_null()).group_by(["receiver_player_id", "posteam", "week"]).agg(pl.len().alias("rz_targets")).rename({"receiver_player_id": "player_id"})
+    team = rz.group_by(["posteam", "week"]).agg(pl.len().alias("team_rz_plays"))
+    return (
+        rushes.join(targets, on=["player_id", "posteam", "week"], how="full", coalesce=True)
+        .fill_null(0)
+        .with_columns((pl.col("rz_carries") + pl.col("rz_targets")).alias("rz_touches"))
+        .join(team, on=["posteam", "week"], how="left")
+        .rename({"posteam": "team"})
+        .collect(engine="streaming")
+    )
+
+
 # ------------------------------------------------------------ snap counts
 def snap_share(
     snaps: pl.DataFrame,

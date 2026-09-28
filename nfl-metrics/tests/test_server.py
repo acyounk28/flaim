@@ -29,6 +29,10 @@ EXPECTED_TOOLS = {
     "scan_trade_opportunities",
     "get_game_environments",
     "optimize_lineup",
+    "get_player_trade_value",
+    "rank_trade_values",
+    "compare_trade",
+    "evaluate_trade_proposals",
     "get_cache_status",
     "refresh_season_data",
 }

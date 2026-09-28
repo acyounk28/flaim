@@ -98,6 +98,17 @@ def test_red_zone_usage_counts_carries_and_targets():
     assert "WR1" not in out["player_id"].to_list()
 
 
+def test_red_zone_weekly_touches_and_team_plays():
+    out = metrics.red_zone_weekly(PBP)
+    rb1 = out.filter(pl.col("player_id") == "RB1").row(0, named=True)
+    assert rb1["week"] == 1 and rb1["team"] == "KC"
+    assert rb1["rz_carries"] == 2 and rb1["rz_targets"] == 0 and rb1["rz_touches"] == 2
+    assert rb1["team_rz_plays"] == 4
+    te1 = out.filter(pl.col("player_id") == "TE1").row(0, named=True)
+    assert te1["rz_targets"] == 1 and te1["rz_carries"] == 0
+    assert "WR1" not in out["player_id"].to_list()
+
+
 def test_week_filters():
     assert metrics.qb_efficiency(PBP, week=2, min_dropbacks=1).height == 0
     assert metrics.receiver_usage(PBP, weeks=(1, 3)).height == 4

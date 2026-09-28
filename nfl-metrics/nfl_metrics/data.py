@@ -187,6 +187,22 @@ class DataStore:
 
         return nfl.load_ff_opportunity(season)
 
+    def depth_charts(self, season: int) -> pl.DataFrame:
+        import nflreadpy as nfl
+
+        return nfl.load_depth_charts(season)
+
+    def ff_rankings(self, kind: str = "week") -> pl.DataFrame:
+        """FantasyPros consensus rankings mirrored by nflverse ('week' = latest weekly PPR ECR)."""
+        import nflreadpy as nfl
+
+        return nfl.load_ff_rankings(kind)
+
+    def ff_playerids(self) -> pl.DataFrame:
+        import nflreadpy as nfl
+
+        return nfl.load_ff_playerids()
+
     # -------------------------------------------------------------- derived
     def derived(
         self,

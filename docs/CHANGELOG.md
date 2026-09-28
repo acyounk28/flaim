@@ -4,6 +4,14 @@ Follow Keep a Changelog; stamp a version when submitting to directories.
 
 ## [Unreleased]
 
+### nfl-metrics: live standard-PPR trade values
+
+- **Added**: four MCP tools on the self-hosted `nfl-metrics` server — `get_player_trade_value`, `rank_trade_values`, `compare_trade`, `evaluate_trade_proposals`. Every skill player gets a 0–100 trade value built from current-season nflverse data (weekly PPR points, expected fantasy points, snap %, target and air-yards share, red-zone touch share, route participation when published), the latest team depth chart with demotion detection, nflverse injury reports plus the ESPN designation for the next game, prior-season baseline, and FantasyPros weekly PPR ECR as a 25% market blend. Declining usage, a reduced depth-chart role, and injury designations lower value; flags (`target_share_declining`, `depth_chart_demoted`, `designation_out`, `market_overvalues`, …) explain why.
+- **Added**: `DataStore.depth_charts`, `DataStore.ff_rankings`, `DataStore.ff_playerids` loaders and a per-week `metrics.red_zone_weekly` aggregate.
+- **Changed**: trade value always uses standard PPR and ignores league scoring settings; `league` input is used only for rosters (ownership checks and starting-lineup impact). Responses carry `data_coverage`, per-source `freshness`, and per-player `confidence`; a source that fails to load lowers confidence rather than the value.
+- **Docs**: `docs/SELF-HOSTING.md` gains a "Trade value tools" section.
+- **Tests**: `nfl-metrics/tests/test_trade_value.py` covers scoring, usage-decline and snap-collapse penalties, depth-chart roles/demotion, designations and missed time, market blend/flags, package consolidation, trade comparison with lineup impact, and batch proposal evaluation; the tool list test includes the new tools.
+
 ### MCP endpoint: GET SSE stream and browser-safe CORS
 
 - **Added**: `GET /mcp` (and `/mcp/`, `/fantasy/mcp`, `/fantasy/mcp/`) now opens the Streamable HTTP server-to-client SSE stream (`200`, `text/event-stream`, `Cache-Control: no-cache, no-transform`, `Connection: keep-alive`, immediate SSE comment frame) instead of returning `405`. Opening the stream needs no bearer token, mirroring the public `initialize`/`tools/list` handshake; a presented-but-invalid token is still rejected with `401`. `DELETE` (session close) is also accepted; other methods keep the JSON-RPC `405` with `Allow: GET, POST, DELETE`. This unblocks integration validators (e.g. Poke) that probe the MCP URL with GET to detect SSE. POST JSON-RPC behavior is unchanged.
