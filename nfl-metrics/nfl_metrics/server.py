@@ -24,7 +24,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
-from . import gm, metrics
+from . import gm, metrics, trade_value, trade_value_data
 from .config import ConfigError, Settings, load_settings
 from .data import DataStore
 from .feeds import EspnFeed
@@ -47,6 +47,7 @@ class Services:
         self.espn = EspnFeed()
         self._sleeper_cache: dict[str, tuple[float, SleeperLeague]] = {}
         self._id_map: pl.DataFrame | None = None
+        self._trade_values: dict[tuple[int, int | None, bool], tuple[float, trade_value.TradeValueInputs, pl.DataFrame]] = {}
 
     def sleeper_league(self, league_id: str, ttl_seconds: int = 300) -> SleeperLeague:
         hit = self._sleeper_cache.get(league_id)
@@ -91,6 +92,18 @@ class Services:
             pl.coalesce(["_full", "player"]).alias("player"),
         ).drop("_full")
 
+    def trade_values(self, season: int, through_week: int | None, include_pbp: bool = True, ttl_seconds: int = 900) -> tuple[trade_value.TradeValueInputs, pl.DataFrame]:
+        """Standard-PPR trade values for every skill player, memoised for ``ttl_seconds``
+        (ESPN designations and nflverse refreshes make this a live number)."""
+        key = (season, through_week, include_pbp)
+        hit = self._trade_values.get(key)
+        if hit and time.time() - hit[0] < ttl_seconds:
+            return hit[1], hit[2]
+        inputs = trade_value_data.build_inputs(self.store, self.espn, season, through_week, include_pbp=include_pbp)
+        values = trade_value.player_trade_values(inputs)
+        self._trade_values[key] = (time.time(), inputs, values)
+        return inputs, values
+
     def id_map(self) -> pl.DataFrame:
         if self._id_map is None:
             import nflreadpy as nfl
@@ -109,6 +122,16 @@ class LeagueContext(BaseModel):
     available_players: list[str] | None = Field(None, description="Free agents (names/ids). Omit to treat every unrostered player as available")
     league_size: int = Field(12, ge=2, le=32)
     scoring: str | dict[str, float] | None = Field(None, description="Overrides imported scoring")
+
+
+class TradeProposalIn(BaseModel):
+    """One league trade proposal: what each team sends."""
+
+    team_a: str = Field(description="Owner/team name of side A (must match a roster name when a league is supplied)")
+    team_b: str = Field(description="Owner/team name of side B")
+    a_gives: list[str] = Field(description="Player names or gsis ids side A sends")
+    b_gives: list[str] = Field(description="Player names or gsis ids side B sends")
+    label: str | None = None
 
 
 class LineupPlayerIn(BaseModel):
@@ -578,6 +601,168 @@ def build_server(services: Services) -> FastMCP:
         )
         out = gm.optimize_lineup(req)
         out.update({"season": s, "week": week, "scoring": scoring_dict, "slots": use_slots, "notes": notes})
+        return out
+
+    # ------------------------------------------------------------ trade value (standard PPR)
+    def _trade_context(season: int | None, through_week: int | None, include_pbp: bool) -> tuple[int, int, trade_value.TradeValueInputs, pl.DataFrame]:
+        s = services.season(season)
+        inputs, values = services.trade_values(s, through_week, include_pbp=include_pbp)
+        return s, inputs.through_week, inputs, values
+
+    def _resolve_for_trade(tokens: list[str], values: pl.DataFrame) -> tuple[list[str], list[str]]:
+        ids: list[str] = []
+        unresolved: list[str] = []
+        for tok in tokens:
+            found, missing = resolve_players([tok], values)
+            if found:
+                ids.append(sorted(found)[0])
+            else:
+                unresolved.extend(missing)
+        return ids, unresolved
+
+    def _trade_meta(s: int, tw: int, inputs: trade_value.TradeValueInputs) -> dict[str, Any]:
+        return {
+            "season": s,
+            "through_week": tw,
+            "scoring": "standard_ppr",
+            "data_coverage": inputs.coverage(),
+            "freshness": inputs.freshness,
+        }
+
+    @mcp.tool()
+    def get_player_trade_value(
+        players: list[str],
+        season: Season = None,
+        through_week: Week = None,
+        include_pbp: bool = True,
+    ) -> dict[str, Any]:
+        """Real-time rest-of-season trade value (0-100, standard PPR) for one or more players with the full evidence trail: season/recent/prior-season/expected PPG, snap %, target share, air yards, red-zone touch share and route participation (season vs last 3 games with declines flagged), real-life depth-chart rank and demotions, current injury designation (ESPN/nflverse), games missed this and last season, FantasyPros market rank and the model-vs-market gap. Missing or stale sources are listed in data_coverage/freshness and lower confidence. Pass include_pbp=false to skip the play-by-play download (drops red-zone and route data)."""
+        s, tw, inputs, values = _trade_context(season, through_week, include_pbp)
+        ids, unresolved = _resolve_for_trade(players, values)
+        rows = values.filter(pl.col("player_id").is_in(ids)).to_dicts()
+        by_id = {r["player_id"]: r for r in rows}
+        return {
+            **_trade_meta(s, tw, inputs),
+            "players": [trade_value.explain(by_id[i]) for i in ids if i in by_id],
+            "unresolved": unresolved,
+        }
+
+    @mcp.tool()
+    def rank_trade_values(
+        season: Season = None,
+        through_week: Week = None,
+        position: Literal["QB", "RB", "WR", "TE"] | None = None,
+        team: str | None = None,
+        flag: str | None = None,
+        limit: int = 50,
+        include_pbp: bool = True,
+    ) -> dict[str, Any]:
+        """League-wide trade-value board (0-100, standard PPR) sorted by value, filterable by position/team or by a flag such as target_share_declining, snap_pct_declining, depth_chart_demoted, role_reduced, market_overvalues or market_undervalues. Use it to find sell-high/buy-low candidates grounded in usage and depth-chart data rather than name value."""
+        s, tw, inputs, values = _trade_context(season, through_week, include_pbp)
+        df = values
+        if position:
+            df = df.filter(pl.col("position") == position)
+        if team:
+            df = df.filter(pl.col("team") == team.upper())
+        if flag:
+            df = df.filter(pl.col("flags").list.contains(flag))
+        cols = [
+            "player_id", "player", "position", "team", "trade_value", "model_score", "market_score", "market_gap", "confidence",
+            "adjusted_ppg", "projected_ppg", "recent_ppg", "season_ppg", "vor", "usage_trend", "role", "status", "games_missed", "flags",
+        ]
+        return {**_trade_meta(s, tw, inputs), "count": df.height, "players": services.to_records(df.select([c for c in cols if c in df.columns]), limit)}
+
+    @mcp.tool()
+    def compare_trade(
+        side_a_gives: list[str],
+        side_b_gives: list[str],
+        league: LeagueContext | None = None,
+        side_a_team: str | None = None,
+        side_b_team: str | None = None,
+        season: Season = None,
+        through_week: Week = None,
+        include_pbp: bool = True,
+    ) -> dict[str, Any]:
+        """Evaluate both sides of a proposed trade on standard-PPR trade value: consolidation-weighted package values (the best asset counts fully, depth pieces less), value gap, verdict (fair / favors_<side>), and every player's usage-trend, depth-chart, injury and market flags. Supply a league (Sleeper id or explicit rosters) plus side_a_team/side_b_team to verify ownership and report each team's starting-lineup PPG before and after the swap."""
+        s, tw, inputs, values = _trade_context(season, through_week, include_pbp)
+        a_ids, a_missing = _resolve_for_trade(side_a_gives, values)
+        b_ids, b_missing = _resolve_for_trade(side_b_gives, values)
+        roster_a = roster_b = None
+        notes: list[str] = []
+        starters = None
+        if league is not None and not side_a_team and (league.my_team or league.my_roster):
+            side_a_team = league.my_team or "me"
+        labels = (side_a_team or "side_a", side_b_team or "side_b")
+        if league is not None:
+            rosters, starters, league_notes = _trade_rosters(league, values)
+            notes.extend(league_notes)
+            if side_a_team:
+                roster_a = rosters.get(side_a_team)
+                if roster_a is None:
+                    notes.append(f"side_a_team {side_a_team!r} not found; rosters: {sorted(rosters)}")
+            if side_b_team:
+                roster_b = rosters.get(side_b_team)
+                if roster_b is None:
+                    notes.append(f"side_b_team {side_b_team!r} not found; rosters: {sorted(rosters)}")
+        out = trade_value.compare_trade(values, a_ids, b_ids, labels=labels, roster_a=roster_a, roster_b=roster_b, starters_per_team=starters)
+        out.update(_trade_meta(s, tw, inputs))
+        out["unresolved"] = a_missing + b_missing
+        out["notes"] = notes
+        return out
+
+    def _trade_rosters(ctx: LeagueContext, values: pl.DataFrame) -> tuple[dict[str, set[str]], dict[str, float] | None, list[str]]:
+        """Rosters only; league scoring settings are deliberately ignored (trade value is always standard PPR)."""
+        rosters: dict[str, set[str]] = {}
+        starters: dict[str, float] | None = None
+        notes: list[str] = []
+        if ctx.sleeper_league_id:
+            league = services.sleeper_league(ctx.sleeper_league_id)
+            rosters = dict(league.rosters)
+            slots = league.slots()
+            starters = gm.starters_from_slots(slots) if slots else None
+            if league.unresolved_sleeper_ids:
+                notes.append(f"{len(league.unresolved_sleeper_ids)} Sleeper player ids had no gsis mapping and were skipped")
+        if ctx.my_roster:
+            ids, unresolved = resolve_players(ctx.my_roster, values)
+            rosters[ctx.my_team or "me"] = ids
+            if unresolved:
+                notes.append(f"unresolved my_roster entries: {unresolved}")
+        for owner, names in (ctx.rival_rosters or {}).items():
+            ids, unresolved = resolve_players(names, values)
+            rosters[owner] = ids
+            if unresolved:
+                notes.append(f"unresolved entries for {owner}: {unresolved}")
+        if ctx.scoring:
+            notes.append("league scoring ignored: trade values are always standard PPR")
+        return rosters, starters, notes
+
+    @mcp.tool()
+    def evaluate_trade_proposals(
+        proposals: list[TradeProposalIn],
+        league: LeagueContext | None = None,
+        season: Season = None,
+        through_week: Week = None,
+        include_pbp: bool = True,
+    ) -> dict[str, Any]:
+        """Batch-evaluate league trade proposals (e.g. every pending trade or a commissioner review) on standard-PPR trade value. Each proposal gets a verdict, value gap, per-player flags and, when a league is supplied, ground-truth ownership checks against real rosters plus starting-lineup impact for both teams. Results are sorted with clean, fair trades first and lopsided or invalid ones surfaced."""
+        s, tw, inputs, values = _trade_context(season, through_week, include_pbp)
+        rosters: dict[str, set[str]] | None = None
+        starters = None
+        notes: list[str] = []
+        if league is not None:
+            rosters, starters, notes = _trade_rosters(league, values)
+        resolved: list[dict[str, Any]] = []
+        unresolved: dict[str, list[str]] = {}
+        for i, p in enumerate(proposals):
+            a_ids, a_missing = _resolve_for_trade(p.a_gives, values)
+            b_ids, b_missing = _resolve_for_trade(p.b_gives, values)
+            if a_missing or b_missing:
+                unresolved[p.label or f"{i}: {p.team_a} <-> {p.team_b}"] = a_missing + b_missing
+            resolved.append({"team_a": p.team_a, "team_b": p.team_b, "a_gives": a_ids, "b_gives": b_ids, "label": p.label})
+        out = trade_value.evaluate_proposals(values, resolved, rosters=rosters or None, starters_per_team=starters)
+        out.update(_trade_meta(s, tw, inputs))
+        out["unresolved"] = unresolved
+        out["notes"] = notes
         return out
 
     # ------------------------------------------------------------ cache ops
